@@ -13,6 +13,7 @@ app.post('/merge', async (req, res) => {
   fs.mkdirSync(tmpDir);
 
   try {
+    // Download all files
     const files = [];
     for (let i = 0; i < urls.length; i++) {
       const filePath = path.join(tmpDir, `${i}.mp3`);
@@ -22,14 +23,22 @@ app.post('/merge', async (req, res) => {
       files.push(filePath);
     }
 
+    // Write concat list file
+    const listPath = path.join(tmpDir, 'list.txt');
+    const listContent = files.map(f => `file '${f}'`).join('\n');
+    fs.writeFileSync(listPath, listContent);
+
+    // Merge using concat demuxer
     const outputPath = path.join(tmpDir, 'merged.mp3');
     await new Promise((resolve, reject) => {
-      const cmd = ffmpeg();
-      files.forEach(f => cmd.input(f));
-      cmd
+      ffmpeg()
+        .input(listPath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .outputOptions(['-c', 'copy'])
+        .output(outputPath)
         .on('end', resolve)
         .on('error', reject)
-        .mergeToFile(outputPath, tmpDir);
+        .run();
     });
 
     res.setHeader('Content-Type', 'audio/mpeg');
@@ -37,6 +46,7 @@ app.post('/merge', async (req, res) => {
     fs.createReadStream(outputPath).pipe(res);
 
   } catch (err) {
+    console.error('Merge error:', err);
     res.status(500).json({ error: err.message });
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
